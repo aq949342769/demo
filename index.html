@@ -55,6 +55,13 @@
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
       }
+      .editable-field {
+        transition: all 0.2s ease;
+      }
+      .editable-field:hover:not(:focus) {
+        background-color: rgba(22, 93, 255, 0.05);
+        cursor: pointer;
+      }
     }
   </style>
 </head>
@@ -67,15 +74,83 @@
       <i class="fa fa-graduation-cap text-primary text-xl"></i>
       <h1 class="text-lg md:text-xl font-bold text-neutral-700">课程进度跟踪</h1>
     </div>
+    <button id="edit-plan-btn" class="text-primary hover:text-primary/80 transition-colors">
+      <i class="fa fa-pencil mr-1"></i> 编辑计划
+    </button>
   </div>
 </header>
 
 <main class="flex-grow container mx-auto px-4 py-8 max-w-md mx-auto">
+  <!-- 编辑学习计划模态框 -->
+  <div id="edit-plan-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden fade-in">
+    <div class="bg-white rounded-xl card-shadow p-6 w-full max-w-md mx-4">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-semibold text-neutral-700">编辑学习计划</h3>
+        <button id="close-modal-btn" class="text-neutral-400 hover:text-neutral-600">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+
+      <form id="edit-plan-form" class="space-y-4">
+        <div>
+          <label for="total-courses" class="block text-sm font-medium text-neutral-700 mb-1">总课程数</label>
+          <input
+            type="number"
+            id="total-courses"
+            class="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+            min="1"
+            placeholder="输入总课程数"
+          >
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="start-date" class="block text-sm font-medium text-neutral-700 mb-1">开始日期</label>
+            <input
+              type="date"
+              id="start-date"
+              class="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+            >
+          </div>
+
+          <div>
+            <label for="end-date" class="block text-sm font-medium text-neutral-700 mb-1">结束日期</label>
+            <input
+              type="date"
+              id="end-date"
+              class="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+            >
+          </div>
+        </div>
+
+        <div>
+          <label for="plan-description" class="block text-sm font-medium text-neutral-700 mb-1">计划描述</label>
+          <textarea
+            id="plan-description"
+            rows="3"
+            class="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+            placeholder="输入计划描述（可选）"
+          ></textarea>
+        </div>
+
+        <div class="flex justify-end space-x-3 mt-6">
+          <button type="button" id="cancel-edit-btn" class="px-4 py-2 border border-neutral-300 rounded-lg hover:bg-neutral-100 transition-colors">
+            取消
+          </button>
+          <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg btn-hover">
+            保存修改
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 进度概览 -->
   <section class="bg-white rounded-xl card-shadow p-6 mb-8 fade-in">
     <div class="text-center mb-6">
-      <h2 class="text-2xl font-bold text-neutral-700 mb-2">312节课学习计划</h2>
-      <p class="text-neutral-500">开始于6月16日，结束于8月16日</p>
+      <h2 id="plan-title" class="text-2xl font-bold text-neutral-700 mb-2 editable-field">312节课学习计划</h2>
+      <p id="plan-date" class="text-neutral-500 editable-field">开始于6月16日，结束于8月16日</p>
+      <p id="plan-desc" class="text-neutral-500 mt-2 text-sm editable-field">开始于6月16日，结束于8月16日</p>
     </div>
 
     <!-- 进度条 -->
@@ -105,7 +180,7 @@
     <div class="grid grid-cols-3 gap-4 mt-8">
       <div class="text-center">
         <p class="text-xs text-neutral-500">总课程</p>
-        <p id="total-count" class="text-xl font-bold text-neutral-700">322</p>
+        <p id="total-courses-display" class="text-xl font-bold text-neutral-700">312</p>
       </div>
       <div class="text-center">
         <p class="text-xs text-neutral-500">已完成</p>
@@ -175,20 +250,30 @@
 </footer>
 
 <script>
-  // 课程基础数据
-  const totalCourses = 322;
-  const startDate = new Date('2025-06-16');
-  const endDate = new Date('2025-08-16');
-  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-  const dailyPlan = totalCourses / totalDays; // 每天计划完成课程数
-
   // 本地存储键名
-  const STORAGE_KEY = 'course_progress_completed';
+  const STORAGE_KEYS = {
+    PLAN: 'course_plan_data',
+    COMPLETED: 'course_progress_completed'
+  };
 
   // DOM元素
+  const editPlanBtn = document.getElementById('edit-plan-btn');
+  const editPlanModal = document.getElementById('edit-plan-modal');
+  const closeModalBtn = document.getElementById('close-modal-btn');
+  const cancelEditBtn = document.getElementById('cancel-edit-btn');
+  const editPlanForm = document.getElementById('edit-plan-form');
+  const totalCoursesInput = document.getElementById('total-courses');
+  const startDateInput = document.getElementById('start-date');
+  const endDateInput = document.getElementById('end-date');
+  const planDescriptionInput = document.getElementById('plan-description');
+
+  const planTitle = document.getElementById('plan-title');
+  const planDate = document.getElementById('plan-date');
+  const planDesc = document.getElementById('plan-desc');
+  const totalCoursesDisplay = document.getElementById('total-courses-display');
+
   const completedInput = document.getElementById('completed-input');
   const updateBtn = document.getElementById('update-btn');
-  const totalCount = document.getElementById('total-count');
   const completedCount = document.getElementById('completed-count');
   const remainingCount = document.getElementById('remaining-count');
   const planProgress = document.getElementById('plan-progress');
@@ -199,13 +284,35 @@
   const saveSuccess = document.getElementById('save-success');
   const progressStatus = document.getElementById('progress-status');
 
+  // 从本地存储获取学习计划数据
+  function getPlanData() {
+    try {
+      const savedData = localStorage.getItem(STORAGE_KEYS.PLAN);
+      return savedData ? JSON.parse(savedData) : null;
+    } catch (error) {
+      console.error('获取学习计划数据失败:', error);
+      return null;
+    }
+  }
+
+  // 保存学习计划数据到本地存储
+  function savePlanData(planData) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.PLAN, JSON.stringify(planData));
+      return true;
+    } catch (error) {
+      console.error('保存学习计划数据失败:', error);
+      return false;
+    }
+  }
+
   // 从本地存储获取已完成课程数
   function getSavedCompletedCount() {
     try {
-      const savedValue = localStorage.getItem(STORAGE_KEY);
+      const savedValue = localStorage.getItem(STORAGE_KEYS.COMPLETED);
       return savedValue ? parseInt(savedValue) : 0;
     } catch (error) {
-      console.error('获取本地存储数据失败:', error);
+      console.error('获取已完成课程数失败:', error);
       return 0;
     }
   }
@@ -213,31 +320,55 @@
   // 保存已完成课程数到本地存储
   function saveCompletedCount(completed) {
     try {
-      localStorage.setItem(STORAGE_KEY, completed.toString());
+      localStorage.setItem(STORAGE_KEYS.COMPLETED, completed.toString());
       return true;
     } catch (error) {
-      console.error('保存本地存储数据失败:', error);
+      console.error('保存已完成课程数失败:', error);
       return false;
     }
   }
 
   // 获取当前日期的计划完成课程数
-  function getPlanCompletedByDate(date) {
-    const daysPassed = Math.max(0, Math.ceil((date - startDate) / (1000 * 60 * 60 * 24)));
+  function getPlanCompletedByDate(date, totalCourses, startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    const dailyPlan = totalCourses / totalDays;
+
+    const daysPassed = Math.max(0, Math.ceil((date - start) / (1000 * 60 * 60 * 24)));
+
     // 如果当前日期在开始日期之前，计划完成数为0
     if (daysPassed <= 0) return 0;
     // 如果当前日期在结束日期之后，计划完成数为总课程数
-    if (date > endDate) return totalCourses;
+    if (date > end) return totalCourses;
     // 正常情况下，计划完成数 = 已过天数 * 每天计划课程数
     return Math.min(Math.floor(daysPassed * dailyPlan), totalCourses);
   }
 
+  // 格式化日期为"X月X日"格式
+  function formatDate(date) {
+    return `${date.getMonth() + 1}月${date.getDate()}日`;
+  }
+
   // 更新显示函数
-  function updateDisplay(actualCompleted) {
+  function updateDisplay(actualCompleted, planData) {
+    if (!planData) return;
+
+    const { totalCourses, startDate, endDate, description } = planData;
+
+    // 更新计划信息显示
+    planTitle.textContent = `${totalCourses}节课学习计划`;
+    planDate.textContent = `开始于${formatDate(new Date(startDate))}，结束于${formatDate(new Date(endDate))}`;
+    planDesc.textContent = description || '无描述';
+    totalCoursesDisplay.textContent = totalCourses;
+
+    // 更新输入框最大值
+    completedInput.max = totalCourses;
+
     // 获取今天的计划完成数
     const today = new Date();
     today.setHours(0, 0, 0, 0); // 确保比较的是日期，不是时间
-    const planCompleted = getPlanCompletedByDate(today);
+    const planCompleted = getPlanCompletedByDate(today, totalCourses, startDate, endDate);
 
     // 更新数值
     completedCount.textContent = actualCompleted;
@@ -270,34 +401,66 @@
 
     progressStatus.className = `inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${statusClass}`;
     progressStatus.innerHTML = `<i class="fa ${statusIcon} mr-1"></i><span>${statusText}</span>`;
-
-    // 显示保存成功提示
-    saveSuccess.classList.remove('hidden');
-    setTimeout(() => {
-      saveSuccess.classList.add('hidden');
-    }, 2000);
   }
 
   // 初始化页面
   function initPage() {
+    // 获取本地存储的学习计划数据
+    let planData = getPlanData();
+
+    // 如果没有保存的计划数据，使用默认值
+    if (!planData) {
+      planData = {
+        totalCourses: 312,
+        startDate: '2023-06-16',
+        endDate: '2023-08-16',
+        description: ''
+      };
+      savePlanData(planData);
+    }
+
+    // 填充编辑表单
+    totalCoursesInput.value = planData.totalCourses;
+    startDateInput.value = planData.startDate;
+    endDateInput.value = planData.endDate;
+    planDescriptionInput.value = planData.description || '';
+
     // 获取本地存储的已完成课程数
     const savedCompleted = getSavedCompletedCount();
 
     // 更新显示
-    updateDisplay(savedCompleted);
+    updateDisplay(savedCompleted, planData);
 
     // 设置输入框值
     completedInput.value = savedCompleted;
-    totalCount.textContent = totalCourses;
 
     // 显示提示信息
     updateTip.classList.remove('hidden');
   }
 
+  // 打开编辑计划模态框
+  function openEditModal() {
+    editPlanModal.classList.remove('hidden');
+    // 自动聚焦第一个输入框
+    totalCoursesInput.focus();
+  }
+
+  // 关闭编辑计划模态框
+  function closeEditModal() {
+    editPlanModal.classList.add('hidden');
+    // 清除表单错误状态
+    totalCoursesInput.classList.remove('border-red-500');
+    startDateInput.classList.remove('border-red-500');
+    endDateInput.classList.remove('border-red-500');
+  }
+
   // 按钮点击事件
   updateBtn.addEventListener('click', function() {
+    const planData = getPlanData();
+    if (!planData) return;
+
     const inputValue = parseInt(completedInput.value);
-    if (isNaN(inputValue) || inputValue < 0 || inputValue > totalCourses) {
+    if (isNaN(inputValue) || inputValue < 0 || inputValue > planData.totalCourses) {
       // 输入验证
       completedInput.classList.add('border-red-500');
       setTimeout(() => {
@@ -309,9 +472,101 @@
     // 保存到本地存储
     if (saveCompletedCount(inputValue)) {
       // 更新显示
-      updateDisplay(inputValue);
+      updateDisplay(inputValue, planData);
     } else {
       alert('保存失败，请重试');
+    }
+  });
+
+  // 编辑计划按钮点击事件
+  editPlanBtn.addEventListener('click', openEditModal);
+
+  // 关闭模态框按钮点击事件
+  closeModalBtn.addEventListener('click', closeEditModal);
+
+  // 取消编辑按钮点击事件
+  cancelEditBtn.addEventListener('click', closeEditModal);
+
+  // 点击模态框外部关闭
+  editPlanModal.addEventListener('click', function(e) {
+    if (e.target === editPlanModal) {
+      closeEditModal();
+    }
+  });
+
+  // 编辑计划表单提交事件
+  editPlanForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const totalCourses = parseInt(totalCoursesInput.value);
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    const description = planDescriptionInput.value.trim();
+
+    // 表单验证
+    let isValid = true;
+
+    if (isNaN(totalCourses) || totalCourses <= 0) {
+      totalCoursesInput.classList.add('border-red-500');
+      isValid = false;
+    } else {
+      totalCoursesInput.classList.remove('border-red-500');
+    }
+
+    if (!startDate) {
+      startDateInput.classList.add('border-red-500');
+      isValid = false;
+    } else {
+      startDateInput.classList.remove('border-red-500');
+    }
+
+    if (!endDate) {
+      endDateInput.classList.add('border-red-500');
+      isValid = false;
+    } else {
+      endDateInput.classList.remove('border-red-500');
+    }
+
+    if (startDate && endDate && new Date(startDate) >= new Date(endDate)) {
+      endDateInput.classList.add('border-red-500');
+      isValid = false;
+    } else if (endDate) {
+      endDateInput.classList.remove('border-red-500');
+    }
+
+    if (!isValid) return;
+
+    // 保存计划数据
+    const planData = {
+      totalCourses,
+      startDate,
+      endDate,
+      description
+    };
+
+    if (savePlanData(planData)) {
+      // 获取当前已完成课程数
+      let completed = getSavedCompletedCount();
+
+      // 如果已完成课程数超过新的总课程数，调整为新的总课程数
+      if (completed > totalCourses) {
+        completed = totalCourses;
+        saveCompletedCount(completed);
+      }
+
+      // 更新显示
+      updateDisplay(completed, planData);
+
+      // 关闭模态框
+      closeEditModal();
+
+      // 显示保存成功提示
+      saveSuccess.classList.remove('hidden');
+      setTimeout(() => {
+        saveSuccess.classList.add('hidden');
+      }, 2000);
+    } else {
+      alert('保存计划失败，请重试');
     }
   });
 
